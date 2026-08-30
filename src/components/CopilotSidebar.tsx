@@ -89,47 +89,112 @@ export const CopilotSidebar: React.FC<CopilotSidebarProps> = ({ lesson, currentT
     }
   };
 
-  // Helper to parse text with [MM:SS] timestamps and render clickable badges
-  const renderMessageContent = (content: string) => {
-    const timeRegex = /\[(\d{2}):(\d{2})\]/g;
-    const parts = [];
-    let lastIndex = 0;
-    let match;
+  // Rich formatted renderer with proper headings, bold tags, and clickable timestamp badges
+  const renderFormattedMessage = (content: string) => {
+    const lines = content.split('\n');
 
-    while ((match = timeRegex.exec(content)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(content.substring(lastIndex, match.index));
+    return lines.map((line, lineIdx) => {
+      const trimmed = line.trim();
+
+      // Heading 3: ### Title
+      if (trimmed.startsWith('### ')) {
+        return (
+          <h4 key={lineIdx} className="text-xs font-bold text-indigo-300 mt-2.5 mb-1 flex items-center gap-1.5">
+            <Sparkles className="h-3 w-3 text-cyan-400" />
+            <span>{trimmed.replace(/^###\s*/, '')}</span>
+          </h4>
+        );
       }
-      const mins = parseInt(match[1], 10);
-      const secs = parseInt(match[2], 10);
-      const totalSec = mins * 60 + secs;
-      const timeStr = `${match[1]}:${match[2]}`;
 
-      parts.push(
-        <button
-          key={`time-${match.index}`}
-          onClick={() => onSeek(totalSec)}
-          className="inline-flex items-center gap-1 rounded-md bg-indigo-500/20 px-1.5 py-0.5 text-xs font-mono font-bold text-indigo-300 border border-indigo-500/40 hover:bg-indigo-500/30 transition-colors mx-1"
-          title={`Jump video to ${timeStr}`}
-        >
-          <Clock className="h-3 w-3 text-cyan-400" />
-          <span>{timeStr}</span>
-        </button>
+      // Bullet points: * Item or - Item
+      const isBullet = trimmed.startsWith('* ') || trimmed.startsWith('- ') || trimmed.startsWith('• ');
+      const textToParse = isBullet ? trimmed.replace(/^[\*\-•]\s*/, '') : line;
+
+      // Inline parser for timestamps [MM:SS] and **bold**
+      const parseInline = (text: string) => {
+        // Regex to capture [MM:SS] or **bold**
+        const tokenRegex = /(\[\d{2}:\d{2}\]|\*\*[^*]+\*\*|\$[^\$]+\$)/g;
+        const elements = [];
+        let lastIdx = 0;
+        let match;
+
+        while ((match = tokenRegex.exec(text)) !== null) {
+          if (match.index > lastIdx) {
+            elements.push(text.substring(lastIdx, match.index));
+          }
+
+          const token = match[0];
+
+          // Timestamp Badge: [MM:SS]
+          if (token.startsWith('[') && token.endsWith(']')) {
+            const timeStr = token.slice(1, -1);
+            const [m, s] = timeStr.split(':').map(Number);
+            const totalSec = m * 60 + s;
+
+            elements.push(
+              <button
+                key={`badge-${match.index}`}
+                type="button"
+                onClick={() => onSeek(totalSec)}
+                className="inline-flex items-center gap-1 rounded-md bg-indigo-500/25 px-1.5 py-0.5 text-[11px] font-mono font-bold text-indigo-300 border border-indigo-500/40 hover:bg-indigo-500 hover:text-white transition-all shadow-sm mx-1 align-baseline cursor-pointer"
+                title={`Jump lecture to ${timeStr}`}
+              >
+                <Clock className="h-3 w-3 text-cyan-400" />
+                <span>{timeStr}</span>
+              </button>
+            );
+          }
+          // Bold text: **text**
+          else if (token.startsWith('**') && token.endsWith('**')) {
+            elements.push(
+              <strong key={`bold-${match.index}`} className="font-bold text-white">
+                {token.slice(2, -2)}
+              </strong>
+            );
+          }
+          // Math notation: $formula$
+          else if (token.startsWith('$') && token.endsWith('$')) {
+            elements.push(
+              <span key={`math-${match.index}`} className="font-mono text-cyan-300 bg-slate-950/80 px-1 py-0.5 rounded text-[11px]">
+                {token.slice(1, -1)}
+              </span>
+            );
+          }
+
+          lastIdx = match.index + token.length;
+        }
+
+        if (lastIdx < text.length) {
+          elements.push(text.substring(lastIdx));
+        }
+
+        return elements;
+      };
+
+      if (isBullet) {
+        return (
+          <div key={lineIdx} className="flex items-start gap-2 text-xs text-slate-300 my-1 pl-1">
+            <span className="text-indigo-400 font-bold mt-0.5">•</span>
+            <div className="leading-relaxed">{parseInline(textToParse)}</div>
+          </div>
+        );
+      }
+
+      if (!trimmed) {
+        return <div key={lineIdx} className="h-1.5" />;
+      }
+
+      return (
+        <p key={lineIdx} className="text-xs text-slate-300 leading-relaxed my-0.5">
+          {parseInline(line)}
+        </p>
       );
-      lastIndex = match.index + match[0].length;
-    }
-
-    if (lastIndex < content.length) {
-      parts.push(content.substring(lastIndex));
-    }
-
-    return parts;
+    });
   };
 
   const quickPrompts = [
     'Explain this concept in simple terms',
     'Why is cosine similarity preferred?',
-    'What was mentioned at 01:20?',
     'What are the key trade-offs?'
   ];
 
@@ -169,30 +234,31 @@ export const CopilotSidebar: React.FC<CopilotSidebarProps> = ({ lesson, currentT
             )}
 
             <div
-              className={`max-w-[85%] rounded-2xl p-3.5 ${
+              className={`max-w-[88%] rounded-2xl p-4 ${
                 msg.role === 'user'
                   ? 'bg-indigo-600 text-white shadow-glow'
-                  : 'border border-slate-800 bg-slate-900/80 text-slate-200 shadow-sm'
+                  : 'border border-slate-800 bg-slate-900/90 text-slate-200 shadow-sm'
               }`}
             >
-              <div className="whitespace-pre-wrap">{renderMessageContent(msg.content)}</div>
+              <div>{renderFormattedMessage(msg.content)}</div>
 
-              {/* Citations Box */}
+              {/* Grounded Citations Box */}
               {msg.citations && msg.citations.length > 0 && (
-                <div className="mt-3 border-t border-slate-800/80 pt-2.5 space-y-1.5">
+                <div className="mt-3.5 border-t border-slate-800/80 pt-2.5 space-y-1.5">
                   <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1">
                     <Clock className="h-3 w-3 text-cyan-400" /> Grounded Timestamp Citations
                   </div>
                   {msg.citations.map((c, i) => (
                     <button
                       key={i}
+                      type="button"
                       onClick={() => onSeek(c.startSec)}
-                      className="flex w-full items-start gap-2 rounded-lg bg-slate-950/80 p-2 text-left text-[11px] text-slate-300 border border-slate-800 hover:border-indigo-500/40 hover:text-white transition-all"
+                      className="flex w-full items-start gap-2 rounded-xl bg-slate-950/80 p-2.5 text-left text-[11px] text-slate-300 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-950 transition-all group"
                     >
-                      <span className="shrink-0 rounded bg-indigo-500/20 px-1.5 py-0.5 font-mono text-[10px] font-bold text-indigo-300">
+                      <span className="shrink-0 rounded-lg bg-indigo-500/20 px-2 py-0.5 font-mono text-[10px] font-bold text-indigo-300 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
                         {Math.floor(c.startSec / 60).toString().padStart(2, '0')}:{(c.startSec % 60).toString().padStart(2, '0')}
                       </span>
-                      <span className="line-clamp-2 italic text-slate-400">&ldquo;{c.quote}&rdquo;</span>
+                      <span className="line-clamp-2 italic text-slate-400 group-hover:text-slate-200 transition-colors">&ldquo;{c.quote}&rdquo;</span>
                     </button>
                   ))}
                 </div>
@@ -221,8 +287,9 @@ export const CopilotSidebar: React.FC<CopilotSidebarProps> = ({ lesson, currentT
         {quickPrompts.map((qp, idx) => (
           <button
             key={idx}
+            type="button"
             onClick={() => handleSend(qp)}
-            className="shrink-0 rounded-full border border-slate-800 bg-slate-900/80 px-2.5 py-1 text-[10px] font-medium text-slate-300 hover:border-indigo-500/40 hover:text-white transition-colors"
+            className="shrink-0 rounded-full border border-slate-800 bg-slate-900/80 px-3 py-1 text-[11px] font-medium text-slate-300 hover:border-indigo-500/40 hover:text-white transition-colors"
           >
             {qp}
           </button>

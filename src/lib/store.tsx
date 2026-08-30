@@ -1,7 +1,7 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Course, CourseModule, Lesson, KnowledgeNode, MasteryStatus, ChatMessage, User } from '@/types';
+import React, { createContext, useContext, useState } from 'react';
+import { Course, CourseModule, Lesson, KnowledgeNode, MasteryStatus, User } from '@/types';
 import { INITIAL_COURSES, INITIAL_USER } from './mockData';
 import confetti from 'canvas-confetti';
 
@@ -15,6 +15,7 @@ interface StoreContextType {
   setGeminiApiKey: (key: string) => void;
   setActiveCourse: (course: Course) => void;
   setActiveLesson: (lesson: Lesson) => void;
+  updateActiveLesson: (updatedFields: Partial<Lesson>) => void;
   updateNodeStatus: (conceptCode: string, status: MasteryStatus, score?: number) => void;
   addSynthesizedCourse: (course: Course) => void;
   triggerMasteryCelebration: () => void;
@@ -32,7 +33,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [knowledgeNodes, setKnowledgeNodes] = useState<KnowledgeNode[]>(INITIAL_COURSES[0].knowledgeNodes);
   const [geminiApiKey, setGeminiApiKey] = useState<string>('');
 
-  // Synchronize knowledge nodes when active course changes
   const setActiveCourse = (course: Course) => {
     setActiveCourseState(course);
     setKnowledgeNodes(course.knowledgeNodes);
@@ -47,22 +47,72 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setActiveLessonState(lesson);
   };
 
+  // Update active lesson and synchronize across course modules & knowledge nodes
+  const updateActiveLesson = (updatedFields: Partial<Lesson>) => {
+    if (!activeLesson) return;
+
+    const mergedLesson: Lesson = {
+      ...activeLesson,
+      ...updatedFields,
+    };
+
+    setActiveLessonState(mergedLesson);
+
+    // Update in activeCourse modules
+    setActiveCourseState((prevCourse) => ({
+      ...prevCourse,
+      modules: prevCourse.modules.map((mod) => ({
+        ...mod,
+        lessons: mod.lessons.map((les) =>
+          les.id === mergedLesson.id ? mergedLesson : les
+        ),
+      })),
+    }));
+
+    // Update or add knowledge node
+    if (updatedFields.conceptCode && updatedFields.title) {
+      setKnowledgeNodes((prevNodes) => {
+        const exists = prevNodes.some((n) => n.conceptCode === updatedFields.conceptCode);
+        if (exists) {
+          return prevNodes.map((n) =>
+            n.conceptCode === updatedFields.conceptCode
+              ? { ...n, title: updatedFields.title || n.title, lessonId: mergedLesson.id }
+              : n
+          );
+        } else {
+          return [
+            {
+              id: `node-${Date.now()}`,
+              courseId: activeCourse.id,
+              lessonId: mergedLesson.id,
+              conceptCode: updatedFields.conceptCode!,
+              title: updatedFields.title!,
+              description: `Mastery module for ${updatedFields.title}`,
+              prerequisites: [],
+              status: 'IN_PROGRESS',
+              score: 0.5,
+            },
+            ...prevNodes,
+          ];
+        }
+      });
+    }
+  };
+
   const updateNodeStatus = (conceptCode: string, status: MasteryStatus, score?: number) => {
     setKnowledgeNodes((prev) =>
       prev.map((node) => {
         if (node.conceptCode === conceptCode) {
-          const updated = {
+          return {
             ...node,
             status,
             score: score !== undefined ? score : node.score,
           };
-          return updated;
         }
         return node;
       })
     );
 
-    // If mastered, unlock dependent nodes whose prerequisites are now met
     if (status === 'MASTERED') {
       triggerMasteryCelebration();
       setKnowledgeNodes((prev) => {
@@ -97,9 +147,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         origin: { y: 0.6 },
         colors: ['#6366f1', '#06b6d4', '#10b981', '#a855f7'],
       });
-    } catch {
-      // Ignored if window not available
-    }
+    } catch {}
   };
 
   return (
@@ -114,6 +162,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setGeminiApiKey,
         setActiveCourse,
         setActiveLesson,
+        updateActiveLesson,
         updateNodeStatus,
         addSynthesizedCourse,
         triggerMasteryCelebration,

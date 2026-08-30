@@ -1,0 +1,174 @@
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+enum UserRole {
+  STUDENT
+  INSTRUCTOR
+  ADMIN
+}
+
+enum ContentType {
+  VIDEO
+  ARTICLE
+  INTERACTIVE_LAB
+  QUIZ
+  ASSIGNMENT
+}
+
+enum MasteryStatus {
+  LOCKED
+  AVAILABLE
+  IN_PROGRESS
+  MASTERED
+  NEEDS_REMEDIATION
+}
+
+model User {
+  id            String          @id @db.Uuid
+  email         String          @unique
+  name          String?
+  role          UserRole        @default(STUDENT)
+  avatarUrl     String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  enrollments   Enrollment[]
+  nodeProgress  NodeProgress[]
+  chatSessions  ChatSession[]
+  submissions   Submission[]
+}
+
+model Course {
+  id            String          @id @default(uuid())
+  title         String
+  slug          String          @unique
+  description   String?
+  thumbnailUrl  String?
+  published     Boolean         @default(false)
+  instructorId  String          @db.Uuid
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  modules       CourseModule[]
+  knowledgeNodes KnowledgeNode[]
+  enrollments   Enrollment[]
+}
+
+model CourseModule {
+  id            String          @id @default(uuid())
+  courseId      String
+  course        Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title         String
+  orderIndex    Int
+  lessons       Lesson[]
+  createdAt     DateTime        @default(now())
+}
+
+model Lesson {
+  id            String          @id @default(uuid())
+  moduleId      String
+  module        CourseModule    @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  title         String
+  type          ContentType     @default(VIDEO)
+  orderIndex    Int
+  videoUrl      String?
+  videoDuration Int?            // in seconds
+  transcriptRaw String?         @db.Text
+  articleBody   String?         @db.Text
+  createdAt     DateTime        @default(now())
+
+  embeddings    LessonEmbedding[]
+  nodeLinks     KnowledgeNode[]
+}
+
+model LessonEmbedding {
+  id            String                      @id @default(uuid())
+  lessonId      String
+  lesson        Lesson                      @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  startSec      Int
+  endSec        Int
+  chunkText     String                      @db.Text
+  embedding     Unsupported("vector(1536)")
+  createdAt     DateTime                    @default(now())
+
+  @@index([lessonId])
+}
+
+model KnowledgeNode {
+  id            String          @id @default(uuid())
+  courseId      String
+  course        Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessonId      String?
+  lesson        Lesson?         @relation(fields: [lessonId], references: [id])
+  conceptCode   String          // e.g. "GRAPH_TRAVERSAL_DFS"
+  title         String
+  description   String?
+  prerequisites KnowledgeNode[] @relation("NodePrerequisites")
+  dependents    KnowledgeNode[] @relation("NodePrerequisites")
+
+  progressRecords NodeProgress[]
+}
+
+model Enrollment {
+  id            String          @id @default(uuid())
+  userId        String          @db.Uuid
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId      String
+  course        Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  enrolledAt    DateTime        @default(now())
+  completedAt   DateTime?
+
+  @@unique([userId, courseId])
+}
+
+model NodeProgress {
+  id            String          @id @default(uuid())
+  userId        String          @db.Uuid
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nodeId        String
+  node          KnowledgeNode   @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  status        MasteryStatus   @default(LOCKED)
+  score         Float           @default(0.0) // 0.0 to 1.0
+  lastActivity  DateTime        @default(now())
+
+  @@unique([userId, nodeId])
+}
+
+model ChatSession {
+  id            String          @id @default(uuid())
+  userId        String          @db.Uuid
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId      String
+  messages      ChatMessage[]
+  createdAt     DateTime        @default(now())
+}
+
+model ChatMessage {
+  id            String          @id @default(uuid())
+  sessionId     String
+  session       ChatSession     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role          String          // "user" | "assistant" | "system"
+  content       String          @db.Text
+  citations     Json?           // Array of [{ startSec: 120, endSec: 155, quote: "..." }]
+  createdAt     DateTime        @default(now())
+}
+
+model Submission {
+  id            String          @id @default(uuid())
+  userId        String          @db.Uuid
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId      String
+  submissionText String         @db.Text
+  evaluation    Json?           // Detailed rubric scores, suggestions, and hints
+  score         Float?
+  passed        Boolean         @default(false)
+  createdAt     DateTime        @default(now())
+}

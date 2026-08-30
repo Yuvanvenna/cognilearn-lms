@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Lesson, InteractiveCheckpoint } from '@/types';
 import { useStore } from '@/lib/store';
 import {
@@ -15,10 +15,12 @@ import {
   ArrowRight,
   Sparkles,
   Award,
+  Video,
+  Upload,
   Layers,
   Activity,
-  Radio,
-  FileText
+  Cpu,
+  BrainCircuit
 } from 'lucide-react';
 
 interface VideoPlayerProps {
@@ -29,34 +31,45 @@ interface VideoPlayerProps {
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({ lesson, onTimeUpdate, onSeekRequested }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const { updateNodeStatus, triggerMasteryCelebration } = useStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(lesson.videoDuration || 596);
+  const [duration, setDuration] = useState(lesson.videoDuration || 420);
   const [isMuted, setIsMuted] = useState(false);
   const [activeCheckpoint, setActiveCheckpoint] = useState<InteractiveCheckpoint | null>(null);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [isAnswerSubmitted, setIsAnswerSubmitted] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
   const [passedCheckpoints, setPassedCheckpoints] = useState<number[]>([]);
+  const [customVideoSrc, setCustomVideoSrc] = useState<string | null>(null);
+  const [useCanvasMode, setUseCanvasMode] = useState(false);
+
+  // Notify parent of time updates (isolated effect, prevents setState in render warning)
+  useEffect(() => {
+    if (onTimeUpdate) {
+      onTimeUpdate(currentTime);
+    }
+  }, [currentTime, onTimeUpdate]);
 
   // Expose seek function to parent (for Copilot timestamp clicks)
   useEffect(() => {
     if (onSeekRequested) {
       onSeekRequested((seekToSec: number) => {
         setCurrentTime(seekToSec);
-        if (videoRef.current) {
+        if (videoRef.current && !useCanvasMode) {
           try {
             videoRef.current.currentTime = seekToSec;
+            videoRef.current.play().catch(() => {});
           } catch {}
         }
         setIsPlaying(true);
       });
     }
-  }, [onSeekRequested]);
+  }, [onSeekRequested, useCanvasMode]);
 
-  // Robust playback loop that guarantees smooth time progression
+  // Robust timer loop for guaranteed smooth playback
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
 
@@ -65,10 +78,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ lesson, onTimeUpdate, 
         setCurrentTime((prev) => {
           const next = prev + 1;
 
-          // Notify parent
-          if (onTimeUpdate) onTimeUpdate(next);
-
-          // Check if we hit any checkpoint
+          // Check if we hit any checkpoint timestamp
           if (lesson.interactiveCheckpoints && lesson.interactiveCheckpoints.length > 0) {
             for (const cp of lesson.interactiveCheckpoints) {
               if (
@@ -98,18 +108,145 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ lesson, onTimeUpdate, 
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isPlaying, activeCheckpoint, duration, lesson, passedCheckpoints, onTimeUpdate]);
+  }, [isPlaying, activeCheckpoint, duration, lesson, passedCheckpoints]);
+
+  // 60FPS Live Animated Canvas Engine (Visual Lecture Stream)
+  useEffect(() => {
+    let animFrame: number;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let tick = 0;
+
+    const render = () => {
+      tick++;
+      const w = canvas.width;
+      const h = canvas.height;
+
+      // Dark background
+      ctx.fillStyle = '#090d16';
+      ctx.fillRect(0, 0, w, h);
+
+      // Grid pattern
+      ctx.strokeStyle = '#1e293b25';
+      ctx.lineWidth = 1;
+      const gridSize = 40;
+      for (let x = 0; x < w; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+      for (let y = 0; y < h; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+
+      // Glowing Center Orbitals (AI Concept Nodes)
+      const cx = w / 2;
+      const cy = h / 2 - 20;
+
+      // Outer glowing ring
+      ctx.beginPath();
+      ctx.arc(cx, cy, 110 + Math.sin(tick * 0.05) * 8, 0, Math.PI * 2);
+      ctx.strokeStyle = '#6366f130';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Middle cyan ring
+      ctx.beginPath();
+      ctx.arc(cx, cy, 75 + Math.cos(tick * 0.04) * 6, 0, Math.PI * 2);
+      ctx.strokeStyle = '#06b6d440';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Orbiting particles
+      for (let i = 0; i < 6; i++) {
+        const angle = (tick * 0.02) + (i * Math.PI / 3);
+        const px = cx + Math.cos(angle) * (85 + (i % 2) * 20);
+        const py = cy + Math.sin(angle) * (85 + (i % 2) * 20);
+        ctx.beginPath();
+        ctx.arc(px, py, 4, 0, Math.PI * 2);
+        ctx.fillStyle = i % 2 === 0 ? '#6366f1' : '#06b6d4';
+        ctx.shadowColor = i % 2 === 0 ? '#6366f1' : '#06b6d4';
+        ctx.shadowBlur = 10;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+
+      // Central Hub
+      ctx.beginPath();
+      ctx.arc(cx, cy, 38, 0, Math.PI * 2);
+      ctx.fillStyle = '#1e1b4b';
+      ctx.strokeStyle = '#818cf8';
+      ctx.lineWidth = 3;
+      ctx.fill();
+      ctx.stroke();
+
+      // Hub icon text
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(isPlaying ? 'AI LIVE' : 'PAUSED', cx, cy);
+
+      // Slide Title Banner
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.fillText(lesson.title, cx, h - 75);
+
+      // Subtitle Concept Tracker
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '12px monospace';
+      ctx.fillText(`Concept: ${lesson.conceptCode}  •  ${Math.floor(currentTime / 60).toString().padStart(2, '0')}:${(currentTime % 60).toString().padStart(2, '0')}`, cx, h - 50);
+
+      // Live waveform bars at bottom
+      const barCount = 28;
+      const barWidth = 6;
+      const startX = cx - (barCount * 10) / 2;
+      for (let b = 0; b < barCount; b++) {
+        const barH = isPlaying ? Math.sin(tick * 0.15 + b) * 14 + 16 : 4;
+        ctx.fillStyle = b % 2 === 0 ? '#6366f1' : '#06b6d4';
+        ctx.fillRect(startX + b * 10, h - 25 - barH / 2, barWidth, barH);
+      }
+
+      animFrame = requestAnimationFrame(render);
+    };
+
+    render();
+
+    return () => {
+      cancelAnimationFrame(animFrame);
+    };
+  }, [isPlaying, lesson, currentTime]);
 
   const togglePlay = () => {
     setIsPlaying((prev) => !prev);
+    if (videoRef.current && !useCanvasMode) {
+      if (isPlaying) {
+        videoRef.current.pause();
+      } else {
+        videoRef.current.play().catch(() => {
+          setUseCanvasMode(true);
+        });
+      }
+    }
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const time = parseFloat(e.target.value);
     setCurrentTime(time);
-    if (onTimeUpdate) onTimeUpdate(time);
+    if (videoRef.current && !useCanvasMode) {
+      try {
+        videoRef.current.currentTime = time;
+      } catch {}
+    }
 
-    // Check if scrubbed directly to a checkpoint
+    // Check if scrubbed directly into a checkpoint
     if (lesson.interactiveCheckpoints) {
       for (const cp of lesson.interactiveCheckpoints) {
         if (
@@ -123,6 +260,17 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ lesson, onTimeUpdate, 
           break;
         }
       }
+    }
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setCustomVideoSrc(url);
+      setUseCanvasMode(false);
+      setCurrentTime(0);
+      setIsPlaying(false);
     }
   };
 
@@ -157,62 +305,67 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ lesson, onTimeUpdate, 
   return (
     <>
       <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-2xl">
-        {/* Dynamic Interactive Lecture Visual Canvas */}
-        <div className="relative aspect-video w-full bg-[#070b14] flex flex-col justify-between p-6 overflow-hidden select-none">
+        
+        {/* Top Control Bar with Video Source Switcher & File Uploader */}
+        <div className="flex items-center justify-between px-4 py-2.5 bg-slate-900/90 border-b border-slate-800 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="font-mono text-indigo-400 font-bold">{lesson.conceptCode}</span>
+            <span className="text-slate-600">•</span>
+            <span className="text-slate-300 font-medium truncate max-w-xs">{lesson.title}</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setUseCanvasMode(!useCanvasMode)}
+              className="flex items-center gap-1 rounded-lg bg-slate-800 hover:bg-slate-700 px-2.5 py-1 text-[11px] font-medium text-slate-300 border border-slate-700 transition-colors"
+            >
+              <Cpu className="h-3 w-3 text-cyan-400" />
+              <span>{useCanvasMode ? 'AI Stream Mode' : 'Standard MP4 Mode'}</span>
+            </button>
+
+            <label className="flex items-center gap-1.5 cursor-pointer rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 px-2.5 py-1 text-[11px] font-bold text-indigo-200 border border-indigo-500/40 transition-colors">
+              <Upload className="h-3 w-3 text-indigo-300" />
+              <span>Load My .mp4</span>
+              <input type="file" accept="video/mp4,video/webm" onChange={handleFileUpload} className="hidden" />
+            </label>
+          </div>
+        </div>
+
+        {/* Video Viewport: Displays Canvas Animated Stream or Native Video */}
+        <div className="relative aspect-video w-full bg-black flex items-center justify-center overflow-hidden">
           
-          {/* Animated Background Grid & Visual Glow */}
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b15_1px,transparent_1px),linear-gradient(to_bottom,#1e293b15_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] pointer-events-none" />
-          <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+          {/* 60FPS Dynamic AI Motion Canvas */}
+          <canvas
+            ref={canvasRef}
+            width={720}
+            height={405}
+            className={`h-full w-full object-cover ${!useCanvasMode && customVideoSrc ? 'hidden' : 'block'}`}
+          />
 
-          {/* Lecture Header Top Bar */}
-          <div className="relative z-10 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <span className="flex h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
-              <span className="rounded-lg bg-slate-900/90 px-3 py-1 text-xs font-mono font-semibold text-indigo-300 border border-indigo-500/30 backdrop-blur-md">
-                {lesson.conceptCode}
-              </span>
-            </div>
+          {/* Optional Native HTML5 Video Element (Used when custom .mp4 is loaded) */}
+          {!useCanvasMode && customVideoSrc && (
+            <video
+              ref={videoRef}
+              src={customVideoSrc}
+              onPlay={() => setIsPlaying(true)}
+              onPause={() => setIsPlaying(false)}
+              className="h-full w-full object-contain"
+              playsInline
+            />
+          )}
 
-            <div className="flex items-center gap-2 rounded-xl bg-slate-900/80 px-3 py-1 text-xs text-slate-300 border border-slate-800 backdrop-blur-md">
-              <Activity className="h-3.5 w-3.5 text-cyan-400" />
-              <span>{isPlaying ? 'Live Playback' : 'Paused'}</span>
+          {/* Play/Pause Center Click Overlay */}
+          {!isPlaying && !activeCheckpoint && (
+            <div
+              onClick={togglePlay}
+              className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 cursor-pointer backdrop-blur-[2px] transition-all hover:bg-black/20"
+            >
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-indigo-600/90 text-white shadow-glow hover:scale-110 transition-transform">
+                <Play className="h-7 w-7 ml-1" />
+              </div>
             </div>
-          </div>
-
-          {/* Central Animated Lecture Slide & Key Concepts Visualizer */}
-          <div className="relative z-10 my-auto flex flex-col items-center text-center max-w-xl mx-auto space-y-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 text-white shadow-glow">
-              <Sparkles className="h-7 w-7 animate-pulse" />
-            </div>
-
-            <div>
-              <h2 className="text-base sm:text-lg font-extrabold text-white tracking-tight">
-                {lesson.title}
-              </h2>
-              <p className="text-xs text-slate-400 mt-1 max-w-md line-clamp-2">
-                {currentTime < 80
-                  ? 'Foundational geometric mapping & high-dimensional vector embeddings'
-                  : currentTime < 155
-                  ? 'Cosine similarity angles vs Euclidean distance on 1536-dim hyperspheres'
-                  : 'Semantic boundary detection & Supabase pgvector HNSW indexing'}
-              </p>
-            </div>
-
-            {/* Live Audio Waveform Simulation */}
-            <div className="flex items-center gap-1 h-6">
-              {[40, 70, 90, 60, 100, 45, 80, 65, 95, 50, 75, 85, 60, 40].map((h, i) => (
-                <div
-                  key={i}
-                  className={`w-1 rounded-full transition-all duration-300 ${
-                    isPlaying ? 'bg-indigo-500' : 'bg-slate-700'
-                  }`}
-                  style={{
-                    height: isPlaying ? `${Math.max(20, (h * ((i % 3) + 1) * 0.4))}%` : '20%',
-                  }}
-                />
-              ))}
-            </div>
-          </div>
+          )}
 
           {/* Checkpoint Indicators on Timeline */}
           <div className="absolute bottom-16 left-4 right-4 z-20 flex pointer-events-none">
@@ -247,7 +400,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ lesson, onTimeUpdate, 
           </div>
 
           {/* Custom Video Controls Bar */}
-          <div className="relative z-30 -mx-6 -mb-6 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent p-4 border-t border-slate-800/60">
+          <div className="absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-slate-950 via-slate-950/90 to-transparent p-4 border-t border-slate-800/40">
             {/* Progress Bar */}
             <div className="relative mb-3 flex items-center">
               <input
@@ -299,9 +452,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ lesson, onTimeUpdate, 
         </div>
       </div>
 
-      {/* High-Z-Index Floating Checkpoint Quiz Modal */}
+      {/* Floating High-Z-Index Checkpoint Quiz Modal */}
       {activeCheckpoint && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-md animate-in fade-in duration-200">
           <div className="w-full max-w-lg rounded-3xl border border-indigo-500/50 bg-slate-900 p-6 sm:p-8 shadow-2xl">
             
             {/* Modal Header */}
@@ -405,7 +558,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ lesson, onTimeUpdate, 
                   type="button"
                   disabled={selectedOption === null}
                   onClick={handleCheckpointSubmit}
-                  className="w-full flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 py-3.5 text-xs sm:text-sm font-bold text-white transition-all hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed shadow-glow"
+                  className="w-full flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 py-3.5 text-xs sm:text-sm font-bold text-white transition-all hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed shadow-glow cursor-pointer"
                 >
                   <Sparkles className="h-4 w-4" />
                   <span>Submit Answer</span>
@@ -414,7 +567,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ lesson, onTimeUpdate, 
                 <button
                   type="button"
                   onClick={handleResumeVideo}
-                  className="w-full flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-3.5 text-xs sm:text-sm font-bold text-white transition-all hover:bg-emerald-500 shadow-glow-emerald"
+                  className="w-full flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-3.5 text-xs sm:text-sm font-bold text-white transition-all hover:bg-emerald-500 shadow-glow-emerald cursor-pointer"
                 >
                   <span>Continue Lecture</span>
                   <ArrowRight className="h-4 w-4" />
